@@ -19,7 +19,7 @@ def create_run(db,user,data):
     except ValueError as e:raise HTTPException(422,str(e))
     r=Run(source_id=s.id,name=data.name,parameters=params,snapshot={'source':row(s),'records':records},created_at=now(),state='queued')
     db.add(r);db.flush();log(db,user,'run.queued',r.id,data.name);db.commit()
-    try:queue.rpush('analysis:queue',r.id)
+    try:queue.rpush('analysis:queue','run:%s'%r.id)
     except Exception:
         r.state='failed';r.error='队列暂不可用，请重新创建任务';db.commit();raise HTTPException(503,r.error)
     return row(r)

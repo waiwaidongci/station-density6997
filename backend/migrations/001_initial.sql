@@ -1,3 +1,4 @@
 -- SQLAlchemy metadata initializes tables idempotently.
--- Domain tables: surveys, station_readings, density_runs, visit_plans.
+-- Domain tables: surveys, station_readings, density_runs, visit_plans, decision_cards.
 -- Unique natural keys: source.key; (record.source_id, record.reference).
+-- decision_cards 保存复访判定卡的可恢复搜索进度与通过逐站复算后才发布的卡片。

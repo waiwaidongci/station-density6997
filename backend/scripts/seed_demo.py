@@ -54,6 +54,6 @@ def seed():
                 run=Run(source_id=source.id,name='首轮种子研究',state='queued',parameters=CONFIG['default_parameters'],snapshot={'source':{'id':source.id,'name':source.name,'filename':source.filename},'records':records},created_at=now());db.add(run);db.flush();queued.append(run.id)
         db.commit();print(json.dumps(counts(db),ensure_ascii=False))
     for id in queued:
-        try:queue.rpush('analysis:queue',id)
+        try:queue.rpush('analysis:queue','run:%s'%id)
         except Exception:logging.exception('seed queue unavailable')
 if __name__=='__main__':seed()

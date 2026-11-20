@@ -21,6 +21,7 @@ export const domain = {
   "record_table": "station_readings",
   "run_table": "density_runs",
   "note_table": "visit_plans",
+  "card_table": "decision_cards",
   "eyebrow": "FIELD CONTOURS / 42",
   "headline": "让相似微站，自然连成一片。",
   "subtitle": "河砾微站协作组 · 环境特征密度分区与噪声复访",

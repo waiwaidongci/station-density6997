@@ -6,6 +6,7 @@ from .config.settings import REDIS_URL,ARTIFACT_DIR
 from .models.run import Run
 from .models import source,record,user,note,audit
 from .services.algorithm import calculate
+from .services.cards import execute_card,QUEUE_KEY
 from .services.audit import log
 from .services.export import csv_response
 queue=Redis.from_url(REDIS_URL)
@@ -26,9 +27,30 @@ def execute(id):
             logging.exception('analysis failed');r.state='failed';r.error=str(e)[:2000]
             log(db,'worker','run.failed',r.id,r.error)
         db.commit()
+def heartbeat():
+    (ARTIFACT_DIR/'heartbeat').write_text(str(time.time()))
+
+
 def main():
     while True:
-        (ARTIFACT_DIR/'heartbeat').write_text(str(time.time()))
-        value=queue.blpop('analysis:queue',timeout=2)
-        if value:execute(int(value[1]))
+        heartbeat()
+        # 分析队列优先非空取走；空时阻塞等待判定卡队列，兼顾两类任务的及时性。
+        value=queue.lpop('analysis:queue')
+        if value is None:
+            value=queue.blpop(QUEUE_KEY,timeout=2)
+            if value is not None:
+                value=value[1]
+        if value is None:
+            continue
+        kind,_,payload=value.partition(b':')
+        try:
+            if kind==b'card':
+                execute_card(int(payload))
+            elif kind==b'run':
+                execute(int(payload))
+            else:
+                logging.warning('unknown queue message ignored: %r', value)
+        except Exception:
+            logging.exception('worker job failed')
+        heartbeat()
 if __name__=='__main__':main()

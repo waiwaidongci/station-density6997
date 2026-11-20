@@ -5,3 +5,6 @@ class RunState(str,Enum):
     queued='queued'; running='running'; completed='completed'; failed='failed'
 class ReviewState(str,Enum):
     draft='draft'; approved='approved'
+class CardState(str,Enum):
+    queued='queued'; running='running'; completed='completed'
+    failed='failed'; superseded='superseded'

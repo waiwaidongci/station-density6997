@@ -11,7 +11,7 @@
 1. 业务总览：批次、样本、任务与批准交付账册。
 2. 巡测专题：创建/修改来源说明、查看样本、用真实业务字段追加记录；列表分页。
 3. 分析配置：冻结来源、参数和全部样本，进入Redis队列。
-4. 完整结果：真实算法摘要、专属诊断、全部CSV导出和可恢复失败态。
+4. 完整结果：真实算法摘要、专属诊断、全部CSV导出、可恢复失败态，以及**复访判定卡**精确求解。
 5. 复访计划：分析师草案→负责人批准→阅读者下载批准快照。
 6. 审计：登录、来源修改、任务worker完成、业务说明批准等事件。
 
@@ -53,7 +53,7 @@ JWT有效期8小时；PBKDF2盐化哈希保存密码；角色每请求从数据�
 
 ## 实体与字段
 
-Survey / StationReading / DensityRun / VisitPlan 是核心实体；另有User和Audit。数据库实际表：`surveys` → `station_readings` → `density_runs` → `visit_plans`。样本以固定字段JSON保存，后端按以下字段严格验证，不接受未知字段替代必填值：温度 ℃（`temperature`）、相对湿度 %（`humidity`）、颗粒浓度 μg/m³（`particles`）。
+Survey / StationReading / DensityRun / VisitPlan / DecisionCard 是核心实体；另有User和Audit。数据库实际表：`surveys` → `station_readings` → `density_runs` → `visit_plans`，判定卡任务表 `decision_cards` 关联 `density_runs`。样本以固定字段JSON保存，后端按以下字段严格验证，不接受未知字段替代必填值：温度 ℃（`temperature`）、相对湿度 %（`humidity`）、颗粒浓度 μg/m³（`particles`）。
 
 实体贯穿 `backend/src/models`、`schemas`、`services`、`controllers`、`routes`，以及 `frontend/src/api/research.js`、`stores/research.js` 和 `pages`。`Source.key` 与 `(Record.source_id, reference)` 为自然键；来源改名不会修改已冻结任务输入。业务说明在创建时保存结果快照，批准后从该快照导出。
 
@@ -69,6 +69,20 @@ Survey / StationReading / DensityRun / VisitPlan 是核心实体；另有User和
 失败态：业务字段缺失/非有限数值、参数越界、样本不足、退化特征或结构错误均明确拒绝或将任务标failed，错误消息保存在任务中。可回到来源或配置修正后重新执行，历史失败记录保留。
 
 已知边界：只在温度/湿度/颗粒三个标准化特征上做密度分区；不是地理显著性、风险诊断或自动污染识别。eps敏感，分区编号没有大小顺序；含常量列明确拒绝。
+
+## 复访判定卡：精确求解口径
+
+在“完整结果”页选择已完成研究的目标簇与误收上限（簇外站含噪声，判中即误收），系统在**冻结站点数据**上求命中最多的判定规则，产物是外业拿着三项原始读数就能照做的判定卡。
+
+- 规则形态：深度不超过2的判定树，任一站点路径上**至多判断两次**；每个判断只比较一项原始读数与阈值，`读数 ≤ 阈值`走左支、`读数 > 阈值`走右支，阈值只取实际出现过的读数，**同读数恒在同侧**。
+- 优化目标：误收不超过上限时最大化目标簇命中；同分（命中、误收相同）先取**判断节点更少**的规则，再按字段（温度→湿度→颗粒）、阈值、左支、右支的固定顺序取首。
+- 精确且可扩展：枚举全部根分裂（至多 `3×(站点数-1)`），每个子集只保留“每个误收数一条最优规则”的压缩前沿，深度2树由两个子集前沿精确合并；**不逐棵枚举完整规则、不保存全部候选**。2000站在纯标准库实现下约30秒内完成，不依赖numpy。
+- 中断恢复：搜索以根分裂为最小恢复单位，每个批次边界把已核验下标与当前最优规则写入 `decision_cards.progress`，worker重启或任务重新入队后从已核验范围继续，不重复计算。
+- 并发调低误收上限：同（研究，目标簇）新建任务会把未结束的旧任务置为 `superseded`；worker在批次边界与发布前两次核验，**旧解永远不会发布**。
+- 发布闸门：搜索结束后用独立的逐站复算（只依赖规则与冻结原始读数）重新预测全部站点，命中与误收数和搜索结果完全一致才写入 `card.verified=true`；研究结果页只展示通过复算的判定卡，失败/被取代任务仅出现在任务台账。
+- 判定卡内容：嵌套判定树（外业照读）、打印版线性步骤、命中/误收/判断节点指标、目标簇站点数、冻结输入校验和与已核验根分裂数。
+
+判定卡相关代码：`backend/src/services/decision_card.py`（纯标准库求解器）、`card_search.py`（无框架依赖的搜索与发布闸门）、`services/cards.py`（HTTP/worker编排）、`models/card.py`、`routes/cards.py`、`frontend/src/components/common/decision_card.js`。独立暴力oracle、2000站性能与中断恢复、并发取代集成测试见 `test-artifacts/gb-0042/decision-card/`（含 TESTING.md）。
 
 ## 演示数据与一天剧本
 
